@@ -352,13 +352,15 @@ class DataSet(DataSetBase):
                 np.core.multiarray if hasattr(np, "core") else np._core.multiarray
             )
             modules_map = {
-                "numpy.core.multiarray._reconstruct": _multiarray,
-                "numpy.core.multiarray.scalar": _multiarray,
-                "numpy._core.multiarray._reconstruct": _multiarray,
-                "numpy._core.multiarray.scalar": _multiarray,
-                "numpy.ndarray": np,
-                "numpy.dtype": np,
-            }
+            "numpy.core.multiarray._reconstruct": _multiarray,
+            "numpy.core.multiarray.scalar": _multiarray,
+            "numpy._core.multiarray._reconstruct": _multiarray,
+            "numpy._core.multiarray.scalar": _multiarray,
+            "numpy.core.numeric._frombuffer": _multiarray,
+            "numpy._core.numeric._frombuffer": _multiarray,
+            "numpy.ndarray": np,
+            "numpy.dtype": np,
+        }
 
             def find_class(self, module, name):
                 classname = f"{module}.{name}"
