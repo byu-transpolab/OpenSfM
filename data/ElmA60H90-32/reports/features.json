@@ -1,0 +1,165 @@
+{
+    "wall_time": 45.040692541748285,
+    "image_reports": [
+        {
+            "image": "DJI_20260303161353_0001_D.JPG",
+            "num_features": 4991,
+            "wall_time": 1.0996699160896242
+        },
+        {
+            "image": "DJI_20260303161423_0029_D.JPG",
+            "num_features": 5114,
+            "wall_time": 1.0975485830567777
+        },
+        {
+            "image": "DJI_20260303161405_0012_D.JPG",
+            "num_features": 5307,
+            "wall_time": 1.084005624987185
+        },
+        {
+            "image": "DJI_20260303161354_0002_D.JPG",
+            "num_features": 4960,
+            "wall_time": 1.0563237499445677
+        },
+        {
+            "image": "DJI_20260303161415_0022_D.JPG",
+            "num_features": 5324,
+            "wall_time": 1.1366284172981977
+        },
+        {
+            "image": "DJI_20260303161426_0032_D.JPG",
+            "num_features": 5138,
+            "wall_time": 1.121986708138138
+        },
+        {
+            "image": "DJI_20260303161356_0004_D.JPG",
+            "num_features": 5087,
+            "wall_time": 1.1859601251780987
+        },
+        {
+            "image": "DJI_20260303161408_0015_D.JPG",
+            "num_features": 5243,
+            "wall_time": 1.1688696672208607
+        },
+        {
+            "image": "DJI_20260303161407_0014_D.JPG",
+            "num_features": 5243,
+            "wall_time": 1.0975547078996897
+        },
+        {
+            "image": "DJI_20260303161402_0009_D.JPG",
+            "num_features": 5222,
+            "wall_time": 1.0553474170155823
+        },
+        {
+            "image": "DJI_20260303161359_0007_D.JPG",
+            "num_features": 5140,
+            "wall_time": 1.0819720840081573
+        },
+        {
+            "image": "DJI_20260303161418_0025_D.JPG",
+            "num_features": 5238,
+            "wall_time": 1.0493081668391824
+        },
+        {
+            "image": "DJI_20260303161417_0024_D.JPG",
+            "num_features": 5311,
+            "wall_time": 1.0504061658866704
+        },
+        {
+            "image": "DJI_20260303161424_0030_D.JPG",
+            "num_features": 5158,
+            "wall_time": 1.0505206249654293
+        },
+        {
+            "image": "DJI_20260303161412_0019_D.JPG",
+            "num_features": 5332,
+            "wall_time": 1.058732292149216
+        },
+        {
+            "image": "DJI_20260303161416_0023_D.JPG",
+            "num_features": 5273,
+            "wall_time": 1.0743493330664933
+        },
+        {
+            "image": "DJI_20260303161425_0031_D.JPG",
+            "num_features": 5105,
+            "wall_time": 1.2886693752370775
+        },
+        {
+            "image": "DJI_20260303161406_0013_D.JPG",
+            "num_features": 5293,
+            "wall_time": 1.0886023328639567
+        },
+        {
+            "image": "DJI_20260303161358_0006_D.JPG",
+            "num_features": 5043,
+            "wall_time": 1.144967374857515
+        },
+        {
+            "image": "DJI_20260303161409_0016_D.JPG",
+            "num_features": 5148,
+            "wall_time": 1.3391890837810934
+        },
+        {
+            "image": "DJI_20260303161421_0027_D.JPG",
+            "num_features": 5155,
+            "wall_time": 1.0524795409291983
+        },
+        {
+            "image": "DJI_20260303161357_0005_D.JPG",
+            "num_features": 5031,
+            "wall_time": 1.1242925827391446
+        },
+        {
+            "image": "DJI_20260303161419_0026_D.JPG",
+            "num_features": 5233,
+            "wall_time": 1.0773655408993363
+        },
+        {
+            "image": "DJI_20260303161410_0017_D.JPG",
+            "num_features": 5201,
+            "wall_time": 1.0827802917920053
+        },
+        {
+            "image": "DJI_20260303161404_0011_D.JPG",
+            "num_features": 5298,
+            "wall_time": 1.1017491249367595
+        },
+        {
+            "image": "DJI_20260303161411_0018_D.JPG",
+            "num_features": 5364,
+            "wall_time": 1.078105041757226
+        },
+        {
+            "image": "DJI_20260303161414_0021_D.JPG",
+            "num_features": 5289,
+            "wall_time": 1.0691523752175272
+        },
+        {
+            "image": "DJI_20260303161355_0003_D.JPG",
+            "num_features": 4995,
+            "wall_time": 1.1051546656526625
+        },
+        {
+            "image": "DJI_20260303161403_0010_D.JPG",
+            "num_features": 5285,
+            "wall_time": 1.0761765828356147
+        },
+        {
+            "image": "DJI_20260303161422_0028_D.JPG",
+            "num_features": 5164,
+            "wall_time": 1.0647525833919644
+        },
+        {
+            "image": "DJI_20260303161401_0008_D.JPG",
+            "num_features": 5151,
+            "wall_time": 1.0462837503291667
+        },
+        {
+            "image": "DJI_20260303161413_0020_D.JPG",
+            "num_features": 5408,
+            "wall_time": 1.099964083172381
+        }
+    ]
+}
