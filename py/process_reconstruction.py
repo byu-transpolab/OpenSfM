@@ -3,104 +3,225 @@ import numpy as np
 import open3d as o3d
 import os
 import csv
+import shutil
 from shapely.geometry import MultiPoint, Point
 
-def process_reconstruction_v12(json_path):
-    # 1. Setup Directories
+def process_reconstruction_v16(json_path):
     json_dir = os.path.dirname(os.path.abspath(json_path))
-    output_dir = os.path.join(json_dir, "house_analysis_v12")
+    output_dir = os.path.join(json_dir, "house_analysis_v16")
     debug_dir = os.path.join(output_dir, "individual_houses")
-    for d in [output_dir, debug_dir]:
+    img_output_dir = os.path.join(output_dir, "representative_images")
+    src_images_dir = os.path.join(json_dir, "images")
+    
+    for d in [output_dir, debug_dir, img_output_dir]:
         if not os.path.exists(d): os.makedirs(d)
     
-    # Load and Level Data
     with open(json_path, 'r') as f:
         data = json.load(f)
-    pts = np.array([v['coordinates'] for v in data[0]['points'].values()])
+    recon = data[0]
+    points_dict = recon['points']
+    shots = recon['shots']
+    
+    pts = np.array([v['coordinates'] for v in points_dict.values()])
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(pts)
 
-    # Statistical Outlier Removal (Cleans floating noise)
-    pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=25, std_ratio=2.0)
-    
-    # Leveling to Ground Zero (Z=0)
-    plane_model, inliers = pcd.segment_plane(distance_threshold=0.3, ransac_n=3, num_iterations=2000)
-    [a, b, c, d_val] = plane_model
-    original_offset_xy = np.mean(pts[inliers, :2], axis=0)
-    pcd.translate((-original_offset_xy[0], -original_offset_xy[1], 0))
-    target_norm = np.array([0, 0, 1])
-    plane_norm = np.array([a, b, c]) / np.linalg.norm([a, b, c])
-    v = np.cross(plane_norm, target_norm); s = np.linalg.norm(v); c_val = np.dot(plane_norm, target_norm)
-    vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
-    rotation = np.eye(3) + vx + np.dot(vx, vx) * ((1 - c_val) / (s**2))
-    pcd.rotate(rotation, center=(0,0,0))
-    pcd.translate((0, 0, -np.median(np.asarray(pcd.points)[inliers, 2])))
-    if np.median(np.asarray(pcd.points)[:, 2]) < 0:
-        pcd.rotate(np.array([[1,0,0],[0,1,0],[0,0,-1]]), center=(0,0,0))
+    # 1. Clean outliers
+    pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.2)
+    pts_clean = np.asarray(pcd.points)
 
-    # 2. Adaptive Segmentation & Filtering
-    obj_idx = np.where(np.asarray(pcd.points)[:, 2] > 0.5)[0] # Everything > 0.5m above ground
-    objects_pcd = pcd.select_by_index(obj_idx)
+    # 2. 100% DETERMINISTIC LEVELING (PCA)
+    # Grab the lowest 30% of points to mathematically define the ground
+    z_vals = pts_clean[:, 2]
+    ground_thresh = np.percentile(z_vals, 30)
+    ground_pts = pts_clean[z_vals < ground_thresh]
+
+    centroid = np.mean(ground_pts, axis=0)
+    cov = np.cov(ground_pts.T)
+    evals, evecs = np.linalg.eigh(cov)
+    plane_norm = evecs[:, 0] # The normal vector of the ground
+    if plane_norm[2] < 0: plane_norm = -plane_norm
+
+    target_norm = np.array([0, 0, 1])
+    v = np.cross(plane_norm, target_norm)
+    s = np.linalg.norm(v)
+    c_val = np.dot(plane_norm, target_norm)
     
-    # Primary clustering: find the general islands
-    labels = np.array(objects_pcd.cluster_dbscan(eps=3.5, min_points=40))
+    # Rotate to flat
+    if s > 1e-6:
+        vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+        rotation_matrix = np.eye(3) + vx + np.dot(vx, vx) * ((1 - c_val) / (s**2))
+        pcd.rotate(rotation_matrix, center=(0,0,0))
+    else:
+        rotation_matrix = np.eye(3)
+
+    # Shift XY to the centroid anchor (Consistent IDs)
+    original_offset_xy = centroid[:2]
+    pcd.translate((-original_offset_xy[0], -original_offset_xy[1], 0))
+
+    # Shift Z so ground is 0
+    pts_rotated = np.asarray(pcd.points)
+    z_rotated = pts_rotated[:, 2]
+    new_ground_thresh = np.percentile(z_rotated, 30)
+    ground_z = np.median(pts_rotated[z_rotated < new_ground_thresh][:, 2])
+    pcd.translate((0, 0, -ground_z))
+
+   # 3. TOP-DOWN EXTRACTION
+    pts_leveled = np.asarray(pcd.points)
+    
+    # Extract ALL points above ground for the final house model
+    above_ground_pcd = pcd.select_by_index(np.where(pts_leveled[:, 2] > 0.5)[0])
+    ag_pts = np.asarray(above_ground_pcd.points)
+
+    # Extract ONLY roofs for clustering (> 2.2m tall)
+    roof_pcd = pcd.select_by_index(np.where(pts_leveled[:, 2] > 2.2)[0])
+    roof_pts = np.asarray(roof_pcd.points).copy()
+    
+    # Squish Z to keep garages attached
+    roof_pts[:, 2] *= 0.1 
+    clustering_pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(roof_pts))
+    
+    # PASS 1: Broad Clustering (The wide 2.5m net)
+    labels = np.array(clustering_pcd.cluster_dbscan(eps=2.5, min_points=15))
+    
     house_list = []
     
     if labels.size > 0 and labels.max() >= 0:
         for i in range(labels.max() + 1):
-            cluster_pcd = objects_pcd.select_by_index(np.where(labels == i)[0])
-            c_pts = np.asarray(cluster_pcd.points)
+            r_cluster_idx = np.where(labels == i)[0]
+            real_roof_pts = np.asarray(roof_pcd.points)[r_cluster_idx]
             
-            # PROBLEM 1: Merged Houses (If Area is massive, re-cluster tightly)
-            hull = MultiPoint(c_pts[:, :2]).convex_hull
-            if hull.area > 350: # If cluster is too large for one house
-                sub_labels = np.array(cluster_pcd.cluster_dbscan(eps=1.5, min_points=20))
-                sub_clusters = [cluster_pcd.select_by_index(np.where(sub_labels == k)[0]) 
-                                for k in range(sub_labels.max() + 1)]
-            else:
-                sub_clusters = [cluster_pcd]
+            points_2d = real_roof_pts[:, :2]
+            if len(points_2d) < 3: continue
+            hull = MultiPoint(points_2d).convex_hull
+            area = hull.area
 
-            for sc_pcd in sub_clusters:
-                sc_pts = np.asarray(sc_pcd.points)
-                if len(sc_pts) < 10: continue
-                
-                # PROBLEM 2 & 3: Cars/Bushes/Fences (Filter by Height Profile)
-                sc_hull = MultiPoint(sc_pts[:, :2]).convex_hull
-                area = sc_hull.area
-                max_h = sc_pts[:, 2].max()
-                avg_h = sc_pts[:, 2].mean()
-                
-                # GEOMETRIC RULES:
-                # - Houses must be > 2.2m tall (excludes most cars/fences)
-                # - Houses must have a footprint > 35m2 (excludes cars/bushes)
-                # - Houses usually have a gap between min and max height > 1.5m
-                if area > 35 and max_h > 2.5 and (max_h - sc_pts[:, 2].min()) > 1.5:
+            # Only process if it's at least the size of a small structure
+            if area > 35:
+                # --- TWO-PASS OVERSIZED FILTER ---
+                if area > 350:
+                    blob_pts = np.copy(real_roof_pts)
+                    blob_pts[:, 2] *= 0.1 # Keep squish for garages
+                    blob_pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(blob_pts))
                     
-                    # ID Generation
-                    local_centroid = np.mean(sc_pts[:, :2], axis=0)
-                    global_x = local_centroid[0] + original_offset_xy[0]
-                    global_y = local_centroid[1] + original_offset_xy[1]
-                    unique_id = f"H_{abs(global_x):.5f}_{abs(global_y):.5f}".replace('.', 'd')
+                    # PASS 2: Forgiving Surgical Cut 
+                    # Increased eps to 1.6 and lowered min_points to 8 so sparse roofs don't shatter
+                    sub_labels = np.array(blob_pcd.cluster_dbscan(eps=1.6, min_points=8))
                     
-                    # Generate Synthetic Floor
-                    min_x, min_y, max_x, max_y = sc_hull.bounds
-                    grid_points = [[x, y, 0.0] for x in np.arange(min_x, max_x, 0.6) 
-                                   for y in np.arange(min_y, max_y, 0.6) if sc_hull.contains(Point(x, y))]
-                    floor_pcd = o3d.geometry.PointCloud()
-                    if grid_points:
-                        floor_pcd.points = o3d.utility.Vector3dVector(np.array(grid_points))
-                        floor_pcd.paint_uniform_color([0.5, 0.5, 0.5])
-                    
-                    o3d.io.write_point_cloud(os.path.join(debug_dir, f"{unique_id}.ply"), sc_pcd + floor_pcd)
-                    house_list.append({"house_ID": unique_id, "Area_m2": round(area, 2), "volume_m3": round(area * avg_h, 2)})
+                    sub_clusters = []
+                    if sub_labels.max() >= 0:
+                        for k in range(sub_labels.max() + 1):
+                            sub_idx = np.where(sub_labels == k)[0]
+                            sub_clusters.append(real_roof_pts[sub_idx])
+                else:
+                    sub_clusters = [real_roof_pts]
 
-    # Save Results
+                # Process the separated footprints
+                for sc_pts in sub_clusters:
+                    sc_2d = sc_pts[:, :2]
+                    if len(sc_2d) < 3: continue
+                    sc_hull = MultiPoint(sc_2d).convex_hull
+                    sc_area = sc_hull.area
+                    
+                    # Dropped secondary area check to 20m2 because sparse roofs have smaller footprints
+                    if sc_area > 20:
+                        # 4. THE COOKIE CUTTER
+                        min_x, min_y, max_x, max_y = sc_hull.bounds
+                        
+                        box_mask = (ag_pts[:, 0] >= min_x) & (ag_pts[:, 0] <= max_x) & \
+                                   (ag_pts[:, 1] >= min_y) & (ag_pts[:, 1] <= max_y)
+                        box_pts = ag_pts[box_mask]
+                        
+                        final_house_pts = np.array([p for p in box_pts if sc_hull.contains(Point(p[0], p[1]))])
+                        if len(final_house_pts) == 0: continue
+
+                        max_h = final_house_pts[:, 2].max()
+                        min_h = final_house_pts[:, 2].min()
+                        avg_h = final_house_pts[:, 2].mean()
+
+                        # Re-applied the strict Height Rules to keep tall bushes and fences out
+                        if max_h > 2.5 and (max_h - min_h) > 1.5:
+
+                            # ID Generation
+                            local_centroid = np.mean(final_house_pts[:, :2], axis=0)
+                            global_x = local_centroid[0] + original_offset_xy[0]
+                            global_y = local_centroid[1] + original_offset_xy[1]
+                            unique_id = f"H_{abs(global_x):.5f}_{abs(global_y):.5f}".replace('.', 'd')
+                            
+                            # --- BEST IMAGE SELECTION ---
+                        best_image = None
+                        min_dist = float('inf')
+                        
+                        for shot_id, shot_data in shots.items():
+                            # 1. Get true camera optical center in world coordinates
+                            rot_vec = np.array(shot_data['rotation'])
+                            trans_vec = np.array(shot_data['translation'])
+                            
+                            # Convert OpenSfM axis-angle to Rotation Matrix
+                            theta = np.linalg.norm(rot_vec)
+                            if theta > 1e-10:
+                                axis = rot_vec / theta
+                                K = np.array([
+                                    [0, -axis[2], axis[1]],
+                                    [axis[2], 0, -axis[0]],
+                                    [-axis[1], axis[0], 0]
+                                ])
+                                R_cam = np.eye(3) + np.sin(theta) * K + (1 - np.cos(theta)) * np.dot(K, K)
+                            else:
+                                R_cam = np.eye(3)
+                                
+                            # The true world position of the drone: C = -R^T * t
+                            true_cam_world = -np.dot(R_cam.T, trans_vec)
+                            
+                            # 2. Un-tilt the true camera position to match the flattened model
+                            if s > 1e-6: 
+                                cam_leveled = rotation_matrix.dot(true_cam_world)
+                            else:
+                                cam_leveled = true_cam_world
+                                
+                            # 3. Shift the camera to the local (0,0) coordinate space
+                            cam_final = cam_leveled[:2] - original_offset_xy
+                            
+                            # 4. Find the shortest horizontal distance to the house centroid
+                            dist = np.linalg.norm(local_centroid - cam_final)
+                            if dist < min_dist:
+                                min_dist = dist
+                                best_image = shot_id
+
+                        if best_image:
+                            src_img = os.path.join(src_images_dir, best_image)
+                            dst_img = os.path.join(img_output_dir, f"{unique_id}.jpg")
+                            if os.path.exists(src_img):
+                                shutil.copy2(src_img, dst_img)
+                            
+                            # Generate Synthetic Floor & Export
+                            grid_points = [[x, y, 0.0] for x in np.arange(min_x, max_x, 0.6) 
+                                           for y in np.arange(min_y, max_y, 0.6) if sc_hull.contains(Point(x, y))]
+                            
+                            final_pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(final_house_pts))
+                            floor_pcd = o3d.geometry.PointCloud()
+                            if grid_points:
+                                floor_pcd.points = o3d.utility.Vector3dVector(np.array(grid_points))
+                                floor_pcd.paint_uniform_color([0.5, 0.5, 0.5])
+                            
+                            o3d.io.write_point_cloud(os.path.join(debug_dir, f"{unique_id}.ply"), final_pcd + floor_pcd)
+                            house_list.append({
+                                "house_ID": unique_id, 
+                                "Area_m2": round(sc_area, 2), 
+                                "volume_m3": round(sc_area * avg_h, 2),
+                                "representative_image": f"{unique_id}.jpg"
+                            })
+
+    # 5. Save Results
     csv_path = os.path.join(output_dir, "house_measurements.csv")
-    with open(csv_path, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=["house_ID", "Area_m2", "volume_m3"])
-        writer.writeheader()
-        writer.writerows(house_list)
+    if house_list:
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=["house_ID", "Area_m2", "volume_m3", "representative_image"])
+            writer.writeheader()
+            writer.writerows(house_list)
     
-    print(f"Refinement complete. Identified {len(house_list)} unique buildings.")
+    print("--- Top-Down Extraction complete ---")
+    print(f"Deterministically identified {len(house_list)} unique buildings.")
 
-process_reconstruction_v12('data/ElmA60H90-24/reconstruction.json')
+# Execute the function
+process_reconstruction_v16('data/ElmA60H90-24/reconstruction.json')
