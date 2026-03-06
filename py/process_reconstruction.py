@@ -224,4 +224,4 @@ def process_reconstruction_v16(json_path):
     print(f"Deterministically identified {len(house_list)} unique buildings.")
 
 # Execute the function
-process_reconstruction_v16('data/ElmA60H90-24/reconstruction.json')
+process_reconstruction_v16('data/CedarSouthA60H90-33/reconstruction.json')

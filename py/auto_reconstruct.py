@@ -11,7 +11,7 @@ Run using the following
 
 python py/auto_reconstruct.py data/foldername
 
-python py/auto_reconstruct.py data/ElmA60H90-24
+python py/auto_reconstruct.py data/WillowA60H90-20
 """
 
 def run_command(command, project_path):
